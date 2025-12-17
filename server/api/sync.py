@@ -8,8 +8,5 @@ router = APIRouter(prefix="/sync")
 @router.post("/")
 async def sync(client_files: list[str], session=Depends(get_session)):
     server_files = await get_all_files(session)
-    missing = [
-        f.filename for f in server_files
-        if f.filename not in client_files
-    ]
+    missing = [f.filename for f in server_files if f.filename not in client_files]
     return {"missing": missing}
