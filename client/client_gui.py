@@ -12,7 +12,7 @@ import subprocess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QListWidget, QMessageBox,
-    QLineEdit, QFrame
+    QLineEdit, QFrame, QListWidgetItem
 )
 from PySide6.QtCore import Signal, QObject, Qt
 
@@ -137,7 +137,6 @@ class FilesWidget(QWidget):
         self.files = {}    # {filename: size}
         self.devices = {}  # {device_name: online}
         self.ws_task = None
-
         # создаём папку для текущего пользователя
         self.user_dir = os.path.join(FILES_DIR, state.username)
         os.makedirs(self.user_dir, exist_ok=True)
@@ -199,6 +198,7 @@ class FilesWidget(QWidget):
         files_label.setStyleSheet("font-weight: bold;")
 
         self.list = FileListWidget(self)
+        self.list.itemDoubleClicked.connect(self.open_file)
 
         files_layout.addWidget(files_label)
         files_layout.addWidget(self.list)
@@ -248,13 +248,15 @@ class FilesWidget(QWidget):
                     with open(path, "rb") as s, open(local, "wb") as d:
                         d.write(s.read())
                 self.files[name] = size
-                self.list.addItem(f"{name} ({self.format_size(size)})")
+                item = QListWidgetItem(f"{name} ({self.format_size(size)})")
+                item.setData(Qt.UserRole, name)
+                self.list.addItem(item)
             except Exception as e:
                 print(f"Ошибка добавления файла {name}: {e}")
 
     def delete_selected(self):
         for item in self.list.selectedItems():
-            name = item.text().split(" (")[0]
+            name = item.data(Qt.UserRole)
             try:
                 requests.post(
                     f"{SERVER_URL}/file/delete",
@@ -289,7 +291,9 @@ class FilesWidget(QWidget):
                 f.write(r.content)
             size = os.path.getsize(local)
             self.files[name] = size
-            self.list.addItem(f"{name} ({self.format_size(size)})")
+            item = QListWidgetItem(f"{name} ({self.format_size(size)})")
+            item.setData(Qt.UserRole, name)
+            self.list.addItem(item)
         except Exception as e:
             print(f"Ошибка download {name}: {e}")
 
@@ -342,7 +346,8 @@ class FilesWidget(QWidget):
         if name in self.files:
             self.files.pop(name, None)
             for i in range(self.list.count()):
-                if self.list.item(i).text().startswith(name):
+                item = self.list.item(i)
+                if item.data(Qt.UserRole) == name:
                     self.list.takeItem(i)
                     break
             path = os.path.join(self.user_dir, name)
@@ -365,7 +370,7 @@ class FilesWidget(QWidget):
 
     # ---------- OPEN FILE ----------
     def open_file(self, item):
-        name = item.text().split(" (")[0]
+        name = item.data(Qt.UserRole)
         path = os.path.join(self.user_dir, name)
         if not os.path.exists(path):
             QMessageBox.warning(self, "Ошибка", f"Файл {name} не найден")

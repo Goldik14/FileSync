@@ -8,8 +8,13 @@ async def get_user_files(session, user_id: int):
     )
     return result.scalars().all()
 
-async def get_file_by_name(session, filename: str):
-    result = await session.execute(select(File).where(File.filename == filename))
+async def get_file_by_name(session, filename: str, user_id: int):
+    result = await session.execute(
+        select(File).where(
+            File.filename == filename,
+            File.user_id == user_id
+        )
+    )
     return result.scalar_one_or_none()
 
 async def add_file(session, user_id, filename, file_hash, size):

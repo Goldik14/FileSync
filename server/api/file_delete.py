@@ -16,7 +16,7 @@ async def delete_file(
     user=Depends(get_current_user),
     session=Depends(get_session)
 ):
-    file = await get_file_by_name(session, filename)
+    file = await get_file_by_name(session, filename, user.id)
     if not file or file.user_id != user.id:
         raise HTTPException(status_code=404, detail="Файл не найден")
     path = user_storage(user.id) / filename
