@@ -1,18 +1,8 @@
 #server/main.py
 from fastapi import FastAPI
 from server.api import upload, download, sync, websocket, devices, file_delete, auth
-<<<<<<< HEAD
-from server.db.database import engine
-from server.db.models import Base
-=======
->>>>>>> rework-auth
 
 app = FastAPI()
-
-@app.on_event("startup")
-async def on_startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
 app.include_router(upload.router)
 app.include_router(download.router)

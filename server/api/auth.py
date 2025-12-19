@@ -31,8 +31,4 @@ async def login(username: str, password: str, session=Depends(get_session)):
         raise HTTPException(401, "Invalid credentials")
 
     token = create_token(user.id)
-<<<<<<< HEAD
     return {"access_token": token, "username": user.username}
-=======
-    return {"access_token": token, "username": user.username}
->>>>>>> rework-auth

@@ -11,13 +11,6 @@ import os
 router = APIRouter(prefix="/file")
 
 @router.post("/delete")
-<<<<<<< HEAD
-async def delete_file(filename: str, user=Depends(get_current_user), session=Depends(get_session)):
-    file = await get_file_by_name(session, filename)
-    if not file or file.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Файл не найден")
-    path = user_storage(user.id) / filename
-=======
 async def delete_file(
     filename: str,
     user=Depends(get_current_user),
@@ -28,7 +21,6 @@ async def delete_file(
         raise HTTPException(status_code=404, detail="Файл не найден")
     path = user_storage(user.id) / filename
 
->>>>>>> rework-auth
     if path.exists():
         os.remove(path)
     await session.delete(file)

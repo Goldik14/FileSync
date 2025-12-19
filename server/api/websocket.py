@@ -10,19 +10,11 @@ active_connections: dict[int, list[WebSocket]] = {}
 async def websocket_endpoint(ws: WebSocket, token: str):
     user_id = decode_token(token)
     await ws.accept()
-<<<<<<< HEAD
-    active_connections.setdefault(user_id, []).append(ws)
-=======
 
     active_connections.setdefault(user_id, []).append(ws)
 
->>>>>>> rework-auth
     try:
         while True:
             await ws.receive_text()
     finally:
-<<<<<<< HEAD
         active_connections[user_id].remove(ws)
-=======
-        active_connections[user_id].remove(ws)
->>>>>>> rework-auth

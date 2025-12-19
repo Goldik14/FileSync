@@ -12,11 +12,7 @@ import subprocess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QListWidget, QMessageBox,
-<<<<<<< HEAD
-    QLineEdit
-=======
     QLineEdit, QFrame, QListWidgetItem
->>>>>>> rework-auth
 )
 from PySide6.QtCore import Signal, QObject, Qt
 
@@ -45,135 +41,6 @@ signals = UISignals()
 # ================= LOGIN WIDGET =================
 class LoginWidget(QWidget):
     def __init__(self, on_success):
-<<<<<<< HEAD
-        super().__init__()
-        self.on_success = on_success
-        self.setup_ui()
-
-    def setup_ui(self):
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Логин"))
-        self.username = QLineEdit()
-        layout.addWidget(self.username)
-
-        layout.addWidget(QLabel("Пароль"))
-        self.password = QLineEdit()
-        self.password.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.password)
-
-        btn_login = QPushButton("Войти")
-        btn_register = QPushButton("Регистрация")
-        btn_login.clicked.connect(self.login)
-        btn_register.clicked.connect(self.register)
-        layout.addWidget(btn_login)
-        layout.addWidget(btn_register)
-        self.setLayout(layout)
-
-    def login(self):
-        try:
-            r = requests.post(
-                f"{SERVER_URL}/auth/login",
-                params={
-                    "username": self.username.text(),
-                    "password": self.password.text()
-                },
-                timeout=5
-            )
-            r.raise_for_status()
-            data = r.json()
-            state.token = data["access_token"]
-            state.username = data.get("username", self.username.text())
-            self.on_success()
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", str(e))
-
-    def register(self):
-        try:
-            r = requests.post(
-                f"{SERVER_URL}/auth/register",
-                params={
-                    "username": self.username.text(),
-                    "password": self.password.text()
-                },
-                timeout=5
-            )
-            r.raise_for_status()
-            QMessageBox.information(self, "OK", "Пользователь создан")
-        except Exception as e:
-            QMessageBox.warning(self, "Ошибка", str(e))
-
-# ================= FILE LIST =================
-class FileListWidget(QListWidget):
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
-        self.setAcceptDrops(True)
-        self.setDragDropMode(QListWidget.DropOnly)  # для DnD
-        self.itemDoubleClicked.connect(self.parent.open_file)
-
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.accept()
-        else:
-            e.ignore()
-
-    def dropEvent(self, e):
-        files = [u.toLocalFile() for u in e.mimeData().urls() if os.path.isfile(u.toLocalFile())]
-        self.parent.add_files(files)
-
-# ================= FILES WIDGET =================
-class FilesWidget(QWidget):
-    def __init__(self, on_logout):
-        super().__init__()
-        self.on_logout = on_logout
-        self.files = {}    # {filename: size}
-        self.devices = {}  # {device_name: online}
-        self.ws_task = None
-
-        # создаём папку для текущего пользователя
-        self.user_dir = os.path.join(FILES_DIR, state.username)
-        os.makedirs(self.user_dir, exist_ok=True)
-
-        self.setup_ui()
-        signals.file_added.connect(self.on_remote_add)
-        signals.file_deleted.connect(self.on_remote_delete)
-        self.register_device()
-        self.sync()
-        self.start_ws()
-
-    def setup_ui(self):
-        main_layout = QHBoxLayout()  # горизонтально: слева файлы, справа устройства
-
-        # ---------- Список файлов ----------
-        left_layout = QVBoxLayout()
-        self.header = QLabel(f"Пользователь: {state.username}")
-        left_layout.addWidget(self.header)
-
-        btns = QHBoxLayout()
-        add_btn = QPushButton("Добавить")
-        del_btn = QPushButton("Удалить")
-        logout_btn = QPushButton("Выйти")
-        add_btn.clicked.connect(self.pick_files)
-        del_btn.clicked.connect(self.delete_selected)
-        logout_btn.clicked.connect(self.logout)
-        btns.addWidget(add_btn)
-        btns.addWidget(del_btn)
-        btns.addWidget(logout_btn)
-        left_layout.addLayout(btns)
-
-        self.list = FileListWidget(self)
-        left_layout.addWidget(self.list)
-        main_layout.addLayout(left_layout, 3)
-
-        # ---------- Список устройств ----------
-        right_layout = QVBoxLayout()
-        right_layout.addWidget(QLabel("Устройства:"))
-        self.devices_list = QListWidget()
-        right_layout.addWidget(self.devices_list)
-        main_layout.addLayout(right_layout, 1)
-
-        self.setLayout(main_layout)
-=======
         super().__init__()
         self.on_success = on_success
         self.setup_ui()
@@ -353,7 +220,6 @@ class FilesWidget(QWidget):
         root.addLayout(split)
 
         self.setLayout(root)
->>>>>>> rework-auth
 
     # ---------- AUTH HEADER ----------
     def headers(self):
@@ -382,23 +248,15 @@ class FilesWidget(QWidget):
                     with open(path, "rb") as s, open(local, "wb") as d:
                         d.write(s.read())
                 self.files[name] = size
-<<<<<<< HEAD
-                self.list.addItem(f"{name} ({self.format_size(size)})")
-=======
                 item = QListWidgetItem(f"{name} ({self.format_size(size)})")
                 item.setData(Qt.UserRole, name)
                 self.list.addItem(item)
->>>>>>> rework-auth
             except Exception as e:
                 print(f"Ошибка добавления файла {name}: {e}")
 
     def delete_selected(self):
         for item in self.list.selectedItems():
-<<<<<<< HEAD
-            name = item.text().split(" (")[0]
-=======
             name = item.data(Qt.UserRole)
->>>>>>> rework-auth
             try:
                 requests.post(
                     f"{SERVER_URL}/file/delete",
@@ -433,13 +291,9 @@ class FilesWidget(QWidget):
                 f.write(r.content)
             size = os.path.getsize(local)
             self.files[name] = size
-<<<<<<< HEAD
-            self.list.addItem(f"{name} ({self.format_size(size)})")
-=======
             item = QListWidgetItem(f"{name} ({self.format_size(size)})")
             item.setData(Qt.UserRole, name)
             self.list.addItem(item)
->>>>>>> rework-auth
         except Exception as e:
             print(f"Ошибка download {name}: {e}")
 
@@ -467,12 +321,6 @@ class FilesWidget(QWidget):
                         action = data.get("action")
                         filename = data.get("filename")
                         device = data.get("device")
-<<<<<<< HEAD
-                        # Фильтруем по пользователю
-                        if data.get("user_id") != state.username:
-                            continue
-=======
->>>>>>> rework-auth
                         if action == "add" and filename:
                             signals.file_added.emit(filename)
                         elif action == "delete" and filename:
@@ -498,12 +346,8 @@ class FilesWidget(QWidget):
         if name in self.files:
             self.files.pop(name, None)
             for i in range(self.list.count()):
-<<<<<<< HEAD
-                if self.list.item(i).text().startswith(name):
-=======
                 item = self.list.item(i)
                 if item.data(Qt.UserRole) == name:
->>>>>>> rework-auth
                     self.list.takeItem(i)
                     break
             path = os.path.join(self.user_dir, name)
@@ -526,11 +370,7 @@ class FilesWidget(QWidget):
 
     # ---------- OPEN FILE ----------
     def open_file(self, item):
-<<<<<<< HEAD
-        name = item.text().split(" (")[0]
-=======
         name = item.data(Qt.UserRole)
->>>>>>> rework-auth
         path = os.path.join(self.user_dir, name)
         if not os.path.exists(path):
             QMessageBox.warning(self, "Ошибка", f"Файл {name} не найден")

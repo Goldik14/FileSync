@@ -1,10 +1,6 @@
 #server/api/download.py
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
-<<<<<<< HEAD
-from server.config import STORAGE_PATH
-=======
->>>>>>> rework-auth
 from server.auth.deps import get_current_user
 from server.config import user_storage
 

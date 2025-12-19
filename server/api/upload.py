@@ -19,11 +19,7 @@ async def upload_file(
     file: UploadFile,
     user=Depends(get_current_user),
     session=Depends(get_session)
-<<<<<<< HEAD
-    ):
-=======
 ):
->>>>>>> rework-auth
     user_dir = user_storage(user.id)
     path = user_dir / file.filename
     hasher = hashlib.sha256()
