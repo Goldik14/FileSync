@@ -6,6 +6,8 @@ from server.config import STORAGE_PATH
 from server.db.database import get_session
 from server.db.crud import add_file, get_or_create_user
 from server.api.websocket import active_connections
+from server.auth.deps import get_current_user
+from server.config import user_storage
 import json
 
 router = APIRouter(prefix="/upload")
@@ -13,11 +15,11 @@ router = APIRouter(prefix="/upload")
 @router.post("/")
 async def upload_file(
     file: UploadFile,
-    session=Depends(get_session),
-    username: str = Header(...)
-):
-    user = await get_or_create_user(session, username)
-    path = STORAGE_PATH / file.filename
+    user=Depends(get_current_user),
+    session=Depends(get_session)
+    ):
+    user_dir = user_storage(user.id)
+    path = user_dir / file.filename
     hasher = hashlib.sha256()
     async with aiofiles.open(path, "wb") as f:
         while chunk := await file.read(8192):
@@ -30,13 +32,9 @@ async def upload_file(
         file_hash=hasher.hexdigest(),
         size=path.stat().st_size
     )
-    for ws in active_connections:
-        try:
-            await ws.send_text(json.dumps({
-                "action": "add",
-                "filename": file.filename,
-                "user_id": user.id
-            }))
-        except:
-            pass
+    for ws in active_connections.get(user.id, []):
+        await ws.send_text(json.dumps({
+            "action": "add",
+            "filename": file.filename
+        }))
     return {"status": "ok"}

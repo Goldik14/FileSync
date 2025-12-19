@@ -5,23 +5,24 @@ from server.db.crud import get_or_create_user, get_file_by_name
 from server.db.models import File
 from server.config import STORAGE_PATH
 from server.api.websocket import active_connections
+from server.auth.deps import get_current_user
+from server.config import user_storage
 import json
 import os
 
 router = APIRouter(prefix="/file")
 
 @router.post("/delete")
-async def delete_file(filename: str, username: str = Header(...), session=Depends(get_session)):
-    user = await get_or_create_user(session, username)
+async def delete_file(filename: str, user=Depends(get_current_user), session=Depends(get_session)):
     file = await get_file_by_name(session, filename)
     if not file or file.user_id != user.id:
         raise HTTPException(status_code=404, detail="Файл не найден")
-    path = STORAGE_PATH / filename
+    path = user_storage(user.id) / filename
     if path.exists():
         os.remove(path)
     await session.delete(file)
     await session.commit()
-    for ws in active_connections:
+    for ws in active_connections.get(user.id, []):
         await ws.send_text(json.dumps({
             "action": "delete",
             "filename": filename

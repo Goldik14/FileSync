@@ -2,16 +2,16 @@
 from fastapi import APIRouter, Depends, Header
 from server.db.database import get_session
 from server.db.crud import get_user_files, get_or_create_user
+from server.auth.deps import get_current_user
 
 router = APIRouter(prefix="/sync")
 
 @router.post("/")
 async def sync(
     client_files: list[str],
-    username: str = Header(...),
+    user=Depends(get_current_user),
     session=Depends(get_session)
 ):
-    user = await get_or_create_user(session, username)
     server_files = await get_user_files(session, user.id)
 
     missing = [
