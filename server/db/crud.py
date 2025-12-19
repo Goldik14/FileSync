@@ -34,20 +34,6 @@ async def add_file(session, user_id, filename, file_hash, size):
     await session.commit()
     return file
 
-async def get_or_create_user(session, username: str):
-    result = await session.execute(
-        select(User).where(User.username == username)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        user = User(username=username)
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-
-    return user
-
-
 async def register_device(session, user_id: int, device_name: str):
     result = await session.execute(
         select(Device).where(

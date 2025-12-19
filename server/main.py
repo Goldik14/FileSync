@@ -1,6 +1,6 @@
 #server/main.py
 from fastapi import FastAPI
-from server.api import upload, download, sync, websocket, devices, file_delete
+from server.api import upload, download, sync, websocket, devices, file_delete, auth
 
 app = FastAPI()
 
@@ -10,3 +10,4 @@ app.include_router(sync.router)
 app.include_router(websocket.router)
 app.include_router(devices.router)
 app.include_router(file_delete.router)
+app.include_router(auth.router)

@@ -7,20 +7,29 @@ import threading
 import requests
 import websockets
 import platform
+import subprocess
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFileDialog, QListWidget, QMessageBox
+    QLabel, QPushButton, QFileDialog, QListWidget, QMessageBox,
+    QLineEdit, QFrame
 )
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Signal, QObject, Qt
 
 # ================= CONFIG =================
 SERVER_URL = "http://127.0.0.1:8000"
 WS_URL = "ws://127.0.0.1:8000/ws/"
-USERNAME = "stepa"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILES_DIR = os.path.join(BASE_DIR, "files")
 os.makedirs(FILES_DIR, exist_ok=True)
+
+# ================= GLOBAL STATE =================
+class AppState:
+    token: str | None = None
+    username: str | None = None
+
+state = AppState()
 
 # ================= SIGNALS =================
 class UISignals(QObject):
@@ -29,218 +38,350 @@ class UISignals(QObject):
 
 signals = UISignals()
 
+# ================= LOGIN WIDGET =================
+class LoginWidget(QWidget):
+    def __init__(self, on_success):
+        super().__init__()
+        self.on_success = on_success
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        layout.addWidget(QLabel("Логин"))
+        self.username = QLineEdit()
+        layout.addWidget(self.username)
+
+        layout.addWidget(QLabel("Пароль"))
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.password)
+
+        btn_login = QPushButton("Войти")
+        btn_register = QPushButton("Регистрация")
+
+        btn_login.clicked.connect(self.login)
+        btn_register.clicked.connect(self.register)
+
+        layout.addWidget(btn_login)
+        layout.addWidget(btn_register)
+
+        self.setLayout(layout)
+
+    # ✅ ВОТ ЭТОГО НЕ ХВАТАЛО
+    def login(self):
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/auth/login",
+                params={
+                    "username": self.username.text(),
+                    "password": self.password.text()
+                },
+                timeout=5
+            )
+            r.raise_for_status()
+            data = r.json()
+            state.token = data["access_token"]
+            state.username = data.get("username", self.username.text())
+            self.on_success()
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", str(e))
+
+    def register(self):
+        try:
+            r = requests.post(
+                f"{SERVER_URL}/auth/register",
+                params={
+                    "username": self.username.text(),
+                    "password": self.password.text()
+                },
+                timeout=5
+            )
+            r.raise_for_status()
+            QMessageBox.information(self, "OK", "Пользователь создан")
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", str(e))
+
 # ================= FILE LIST =================
 class FileListWidget(QListWidget):
-    def __init__(self, parent_widget=None):
+    def __init__(self, parent):
         super().__init__()
-        self.parent_widget = parent_widget
+        self.parent = parent
         self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.DropOnly)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-        else:
-            event.ignore()
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+        event.acceptProposedAction()
 
     def dropEvent(self, event):
-        if event.mimeData().hasUrls():
-            files = [url.toLocalFile() for url in event.mimeData().urls()]
-            if self.parent_widget:
-                self.parent_widget.add_files(files)
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+        files = []
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if os.path.isfile(path):
+                files.append(path)
 
-# ================= MAIN WIDGET =================
-class MainWidget(QWidget):
-    def __init__(self):
+        if files:
+            self.parent.add_files(files)
+
+        event.acceptProposedAction()
+
+# ================= FILES WIDGET =================
+class FilesWidget(QWidget):
+    def __init__(self, on_logout):
         super().__init__()
-        self.files = set()
+        self.on_logout = on_logout
+        self.files = {}    # {filename: size}
+        self.devices = {}  # {device_name: online}
+        self.ws_task = None
+
+        # создаём папку для текущего пользователя
+        self.user_dir = os.path.join(FILES_DIR, state.username)
+        os.makedirs(self.user_dir, exist_ok=True)
+
         self.setup_ui()
-
-        signals.file_added.connect(self.on_remote_file_added)
-        signals.file_deleted.connect(self.on_remote_file_deleted)
-
-        self.sync_with_server()
-        self.start_ws_listener()
+        signals.file_added.connect(self.on_remote_add)
+        signals.file_deleted.connect(self.on_remote_delete)
         self.register_device()
+        self.sync()
+        self.start_ws()
 
     def setup_ui(self):
-        layout = QVBoxLayout()
-        btn_layout = QHBoxLayout()
+        root = QVBoxLayout()
+        root.setSpacing(8)
 
-        add_btn = QPushButton("Добавить файл")
+        # ====== ВЕРХНЯЯ ПАНЕЛЬ КНОПОК ======
+        buttons = QHBoxLayout()
+
+        add_btn = QPushButton("Добавить")
+        del_btn = QPushButton("Удалить")
+        logout_btn = QPushButton("Выход")
+
         add_btn.clicked.connect(self.pick_files)
-        del_btn = QPushButton("Удалить выбранный")
-        del_btn.clicked.connect(self.delete_selected_files)
+        del_btn.clicked.connect(self.delete_selected)
+        logout_btn.clicked.connect(self.logout)
 
-        btn_layout.addWidget(add_btn)
-        btn_layout.addWidget(del_btn)
-        layout.addLayout(btn_layout)
+        buttons.addWidget(add_btn)
+        buttons.addWidget(del_btn)
+        buttons.addStretch()
+        buttons.addWidget(logout_btn)
 
-        self.file_list = FileListWidget(parent_widget=self)
-        self.file_list.itemDoubleClicked.connect(self.open_file)
-        layout.addWidget(QLabel(f"Файлы пользователя: {USERNAME}"))
-        layout.addWidget(self.file_list)
+        root.addLayout(buttons)
 
-        self.setLayout(layout)
+        # ====== РАЗДЕЛИТЕЛЬ ======
+        line1 = QFrame()
+        line1.setFrameShape(QFrame.HLine)
+        line1.setFrameShadow(QFrame.Sunken)
+        root.addWidget(line1)
 
-    # ---------- File operations ----------
+        # ====== ПОЛЬЗОВАТЕЛЬ ======
+        self.header = QLabel(f"Пользователь: {state.username}")
+        self.header.setStyleSheet("font-weight: bold;")
+        root.addWidget(self.header)
+
+        # ====== РАЗДЕЛИТЕЛЬ ======
+        line2 = QFrame()
+        line2.setFrameShape(QFrame.HLine)
+        line2.setFrameShadow(QFrame.Sunken)
+        root.addWidget(line2)
+
+        # ====== ДВА ОКНА: ФАЙЛЫ / УСТРОЙСТВА ======
+        split = QHBoxLayout()
+        split.setSpacing(10)
+
+        # --- ФАЙЛЫ ---
+        files_layout = QVBoxLayout()
+        files_label = QLabel("ФАЙЛЫ")
+        files_label.setAlignment(Qt.AlignCenter)
+        files_label.setStyleSheet("font-weight: bold;")
+
+        self.list = FileListWidget(self)
+
+        files_layout.addWidget(files_label)
+        files_layout.addWidget(self.list)
+
+        # --- УСТРОЙСТВА ---
+        devices_layout = QVBoxLayout()
+        devices_label = QLabel("УСТРОЙСТВА")
+        devices_label.setAlignment(Qt.AlignCenter)
+        devices_label.setStyleSheet("font-weight: bold;")
+
+        self.devices_list = QListWidget()
+
+        devices_layout.addWidget(devices_label)
+        devices_layout.addWidget(self.devices_list)
+
+        split.addLayout(files_layout, 1)
+        split.addLayout(devices_layout, 1)
+
+        root.addLayout(split)
+
+        self.setLayout(root)
+
+    # ---------- AUTH HEADER ----------
+    def headers(self):
+        return {"Authorization": f"Bearer {state.token}"}
+
+    # ---------- FILE OPS ----------
     def pick_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Выбор файлов")
+        files, _ = QFileDialog.getOpenFileNames(self)
         self.add_files(files)
 
     def add_files(self, paths):
         for path in paths:
-            if not os.path.isfile(path):
+            name = os.path.basename(path)
+            if name in self.files:
                 continue
-            filename = os.path.basename(path)
-            if filename in self.files:
-                continue
-
-            # Загружаем на сервер
+            size = os.path.getsize(path)
             try:
                 with open(path, "rb") as f:
                     requests.post(
                         f"{SERVER_URL}/upload/",
-                        headers={"username": USERNAME},
-                        files={"file": f},
-                        timeout=5
+                        headers=self.headers(),
+                        files={"file": f}
                     )
+                local = os.path.join(self.user_dir, name)
+                if not os.path.exists(local):
+                    with open(path, "rb") as s, open(local, "wb") as d:
+                        d.write(s.read())
+                self.files[name] = size
+                self.list.addItem(f"{name} ({self.format_size(size)})")
             except Exception as e:
-                print(f"Ошибка загрузки {filename}: {e}")
-                continue
+                print(f"Ошибка добавления файла {name}: {e}")
 
-            # Локальное сохранение
-            local_path = os.path.join(FILES_DIR, filename)
-            if not os.path.exists(local_path):
-                with open(path, "rb") as src, open(local_path, "wb") as dst:
-                    dst.write(src.read())
-
-            self.files.add(filename)
-            self.file_list.addItem(filename)
-
-    def delete_selected_files(self):
-        selected = self.file_list.selectedItems()
-        for item in selected:
-            filename = item.text()
-            local_path = os.path.join(FILES_DIR, filename)
-            if os.path.exists(local_path):
-                os.remove(local_path)
+    def delete_selected(self):
+        for item in self.list.selectedItems():
+            name = item.text().split(" (")[0]
             try:
                 requests.post(
-                    f"{SERVER_URL}/file/delete?filename={filename}",
-                    headers={"username": USERNAME},
-                    timeout=5
+                    f"{SERVER_URL}/file/delete",
+                    headers=self.headers(),
+                    params={"filename": name}
                 )
             except Exception as e:
-                print(f"Ошибка удаления {filename} на сервере: {e}")
+                print(f"Ошибка удаления на сервере {name}: {e}")
+            path = os.path.join(self.user_dir, name)
+            if os.path.exists(path):
+                os.remove(path)
+            self.files.pop(name, None)
+            self.list.takeItem(self.list.row(item))
 
-            self.files.discard(filename)
-            self.file_list.takeItem(self.file_list.row(item))
-
-    def sync_with_server(self):
+    def sync(self):
         try:
             r = requests.post(
                 f"{SERVER_URL}/sync/",
-                headers={"username": USERNAME},
-                json=list(self.files),
-                timeout=5
+                headers=self.headers(),
+                json=list(self.files.keys())
             )
-            missing = r.json().get("missing", [])
-            for filename in missing:
-                self.download_file(filename)
+            for name in r.json().get("missing", []):
+                self.download(name)
         except Exception as e:
             print(f"Ошибка sync: {e}")
 
-    def download_file(self, filename):
-        path = os.path.join(FILES_DIR, filename)
+    def download(self, name):
         try:
-            r = requests.get(f"{SERVER_URL}/download/{filename}", timeout=5)
-            with open(path, "wb") as f:
+            r = requests.get(f"{SERVER_URL}/download/{name}", headers=self.headers())
+            local = os.path.join(self.user_dir, name)
+            with open(local, "wb") as f:
                 f.write(r.content)
-            if filename not in self.files:
-                self.files.add(filename)
-                self.file_list.addItem(filename)
+            size = os.path.getsize(local)
+            self.files[name] = size
+            self.list.addItem(f"{name} ({self.format_size(size)})")
         except Exception as e:
-            print(f"Ошибка скачивания {filename}: {e}")
+            print(f"Ошибка download {name}: {e}")
 
-    # ---------- Remote file events ----------
-    def on_remote_file_added(self, filename):
-        if filename not in self.files:
-            print(f"⬇️ Скачиваем файл: {filename}")
-            self.download_file(filename)
+    def format_size(self, size: int) -> str:
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}TB"
 
-    def on_remote_file_deleted(self, filename):
-        if filename in self.files:
-            local_path = os.path.join(FILES_DIR, filename)
-            if os.path.exists(local_path):
-                os.remove(local_path)
-            self.files.discard(filename)
-            for i in range(self.file_list.count()-1, -1, -1):
-                if self.file_list.item(i).text() == filename:
-                    self.file_list.takeItem(i)
-                    break
-
-    # ---------- Open file ----------
-    def open_file(self, item):
-        import subprocess
-        filename = item.text()
-        path = os.path.join(FILES_DIR, filename)
-        if os.path.exists(path):
-            if platform.system() == "Windows":
-                os.startfile(path)
-            elif platform.system() == "Darwin":
-                subprocess.call(["open", path])
-            else:
-                subprocess.call(["xdg-open", path])
-        else:
-            QMessageBox.warning(self, "Ошибка", f"Файл {filename} не найден")
-
-    # ---------- Device registration ----------
-    def register_device(self):
-        hostname = platform.node()
-        os_name = platform.system()
-        os_version = platform.release()
-        device_name = f"{hostname} | {os_name} {os_version}"
-        try:
-            requests.post(
-                f"{SERVER_URL}/devices/register",
-                headers={"username": USERNAME},
-                params={"device_name": device_name},
-                timeout=5
-            )
-        except Exception as e:
-            print(f"Ошибка регистрации устройства: {e}")
-
-    # ---------- WebSocket ----------
-    def start_ws_listener(self):
+    # ---------- WS ----------
+    def start_ws(self):
         threading.Thread(target=self.ws_thread, daemon=True).start()
 
     def ws_thread(self):
         asyncio.run(self.ws_loop())
 
     async def ws_loop(self):
+        url = f"{WS_URL}?token={state.token}"
         while True:
             try:
-                async with websockets.connect(WS_URL) as ws:
+                async with websockets.connect(url) as ws:
                     while True:
-                        msg = await ws.recv()
-                        data = json.loads(msg)
+                        data = json.loads(await ws.recv())
                         action = data.get("action")
                         filename = data.get("filename")
-                        if action == "delete" and filename:
-                            signals.file_deleted.emit(filename)
-                        elif action == "add" and filename:
+                        device = data.get("device")
+                        if action == "add" and filename:
                             signals.file_added.emit(filename)
+                        elif action == "delete" and filename:
+                            signals.file_deleted.emit(filename)
+                        elif action == "device" and device:
+                            self.devices[device["name"]] = device["online"]
+                            self.update_devices_list()
             except:
                 await asyncio.sleep(2)
+
+    def update_devices_list(self):
+        self.devices_list.clear()
+        for dev, online in self.devices.items():
+            status = "онлайн" if online else "офлайн"
+            self.devices_list.addItem(f"{dev}: {status}")
+
+    # ---------- REMOTE EVENTS ----------
+    def on_remote_add(self, name):
+        if name not in self.files:
+            self.download(name)
+
+    def on_remote_delete(self, name):
+        if name in self.files:
+            self.files.pop(name, None)
+            for i in range(self.list.count()):
+                if self.list.item(i).text().startswith(name):
+                    self.list.takeItem(i)
+                    break
+            path = os.path.join(self.user_dir, name)
+            if os.path.exists(path):
+                os.remove(path)
+
+    # ---------- DEVICE ----------
+    def register_device(self):
+        try:
+            device = f"{platform.node()} | {platform.system()} {platform.release()}"
+            requests.post(
+                f"{SERVER_URL}/devices/register",
+                headers=self.headers(),
+                params={"device_name": device}
+            )
+            self.devices[device] = True
+            self.update_devices_list()
+        except Exception as e:
+            print(f"Ошибка регистрации устройства: {e}")
+
+    # ---------- OPEN FILE ----------
+    def open_file(self, item):
+        name = item.text().split(" (")[0]
+        path = os.path.join(self.user_dir, name)
+        if not os.path.exists(path):
+            QMessageBox.warning(self, "Ошибка", f"Файл {name} не найден")
+            return
+        if platform.system() == "Windows":
+            os.startfile(path)
+        elif platform.system() == "Darwin":
+            subprocess.call(["open", path])
+        else:
+            subprocess.call(["xdg-open", path])
+
+    # ---------- LOGOUT ----------
+    def logout(self):
+        state.token = None
+        state.username = None
+        self.on_logout()
 
 # ================= MAIN WINDOW =================
 class MainWindow(QMainWindow):
@@ -248,9 +389,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("FileSync")
         self.resize(600, 400)
-        self.setCentralWidget(MainWidget())
+        self.show_login()
 
-# ================= RUN ====================
+    def show_login(self):
+        self.setCentralWidget(LoginWidget(self.show_files))
+
+    def show_files(self):
+        self.setCentralWidget(FilesWidget(self.show_login))
+
+# ================= RUN =================
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     win = MainWindow()
