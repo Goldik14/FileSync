@@ -1,8 +1,11 @@
 #server/main.py
 from fastapi import FastAPI
 from server.api import upload, download, sync, websocket, devices, file_delete, auth
+<<<<<<< HEAD
 from server.db.database import engine
 from server.db.models import Base
+=======
+>>>>>>> rework-auth
 
 app = FastAPI()
 

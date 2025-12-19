@@ -11,4 +11,8 @@ STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 def user_storage(user_id: int):
     path = STORAGE_PATH / str(user_id)
     path.mkdir(parents=True, exist_ok=True)
+<<<<<<< HEAD
     return path
+=======
+    return path
+>>>>>>> rework-auth

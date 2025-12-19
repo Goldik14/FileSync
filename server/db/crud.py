@@ -8,8 +8,13 @@ async def get_user_files(session, user_id: int):
     )
     return result.scalars().all()
 
-async def get_file_by_name(session, filename: str):
-    result = await session.execute(select(File).where(File.filename == filename))
+async def get_file_by_name(session, filename: str, user_id: int):
+    result = await session.execute(
+        select(File).where(
+            File.filename == filename,
+            File.user_id == user_id
+        )
+    )
     return result.scalar_one_or_none()
 
 async def add_file(session, user_id, filename, file_hash, size):
@@ -33,20 +38,6 @@ async def add_file(session, user_id, filename, file_hash, size):
         session.add(file)
     await session.commit()
     return file
-
-async def get_or_create_user(session, username: str):
-    result = await session.execute(
-        select(User).where(User.username == username)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        user = User(username=username)
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-
-    return user
-
 
 async def register_device(session, user_id: int, device_name: str):
     result = await session.execute(

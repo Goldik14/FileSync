@@ -1,2 +1,4 @@
 client/files
 server/storage
+__pycache__/
+*.pyc

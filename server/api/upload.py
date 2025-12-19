@@ -4,7 +4,9 @@ import aiofiles
 from fastapi import APIRouter, UploadFile, Depends, Header
 from server.config import STORAGE_PATH
 from server.db.database import get_session
-from server.db.crud import add_file, get_or_create_user
+from server.db.crud import add_file
+from server.auth.deps import get_current_user
+from server.config import user_storage
 from server.api.websocket import active_connections
 from server.auth.deps import get_current_user
 from server.config import user_storage
@@ -17,7 +19,11 @@ async def upload_file(
     file: UploadFile,
     user=Depends(get_current_user),
     session=Depends(get_session)
+<<<<<<< HEAD
     ):
+=======
+):
+>>>>>>> rework-auth
     user_dir = user_storage(user.id)
     path = user_dir / file.filename
     hasher = hashlib.sha256()
